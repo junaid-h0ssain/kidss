@@ -11,23 +11,28 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   late Box<Word> _wordBox;
+  TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
+    _searchController.addListener(() {
+      setState(() {
+        _searchQuery = _searchController.text.trim().toLowerCase();
+      });
+    });
     _openHiveBox();
   }
 
   Future<void> _openHiveBox() async {
     _wordBox = await Hive.openBox<Word>('words');
-    setState(() {}); // Trigger a rebuild to show the loaded data
+    setState(() {});
   }
 
-  // Function to add a new word
   Future<void> _addWord(BuildContext context) async {
     TextEditingController wordController = TextEditingController();
     TextEditingController definitionController = TextEditingController();
-    
 
     return showDialog<void>(
       context: context,
@@ -77,16 +82,15 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Function to edit an existing word
   Future<void> _editWord(BuildContext context, int index) async {
     if (_wordBox.isEmpty) return;
     final wordToEdit = _wordBox.getAt(index);
     if (wordToEdit == null) return;
 
     TextEditingController wordController =
-        TextEditingController(text: wordToEdit.word);
+    TextEditingController(text: wordToEdit.word);
     TextEditingController definitionController =
-        TextEditingController(text: wordToEdit.definition);
+    TextEditingController(text: wordToEdit.definition);
 
     return showDialog<void>(
       context: context,
@@ -136,7 +140,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // Function to delete a word
   void _deleteWord(int index) {
     _wordBox.deleteAt(index);
   }
@@ -147,45 +150,78 @@ class _HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(
         title: const Text('Vocabulary Practice'),
       ),
-      body: ValueListenableBuilder<Box<Word>>(
-        valueListenable: Hive.box<Word>('words').listenable(),
-        builder: (context, box, _) {
-          if (box.isEmpty) {
-            return const Center(
-              child: Text(
-                  'No vocabulary words added yet. Click the "+" button to add some!'),
-            );
-          }
-          return ListView.builder(
-            itemCount: box.length,
-            itemBuilder: (context, index) {
-              final word = box.getAt(index)!;
-              return Dismissible(
-                key: UniqueKey(), // Use UniqueKey for Dismissible with Hive
-                onDismissed: (direction) {
-                  _deleteWord(index);
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('${word.word} deleted')),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: TextField(
+              controller: _searchController,
+              decoration: InputDecoration(
+                labelText: 'Search by first letter',
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: ValueListenableBuilder<Box<Word>>(
+              valueListenable: Hive.box<Word>('words').listenable(),
+              builder: (context, box, _) {
+                final allWords = box.values.toList();
+                final filteredWords = _searchQuery.isEmpty
+                    ? allWords
+                    : allWords
+                    .where((word) =>
+                    word.word.toLowerCase().startsWith(_searchQuery))
+                    .toList();
+
+                if (filteredWords.isEmpty) {
+                  return const Center(
+                    child: Text(
+                      'No matching words found. Try a different letter!',
+                    ),
                   );
-                },
-                background: Container(
-                  color: Colors.red,
-                  alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.only(right: 20.0),
-                  child: const Icon(Icons.delete, color: Colors.white),
-                ),
-                child: ListTile(
-                  title: Text(word.word,
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
-                  subtitle: Text(word.definition),
-                  onTap: () {
-                    _editWord(context, index);
+                }
+
+                return ListView.builder(
+                  itemCount: filteredWords.length,
+                  itemBuilder: (context, index) {
+                    final word = filteredWords[index];
+                    final originalIndex = allWords.indexOf(word);
+                    return Dismissible(
+                      key: UniqueKey(),
+                      onDismissed: (direction) {
+                        _deleteWord(originalIndex);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('${word.word} deleted')),
+                        );
+                      },
+                      background: Container(
+                        color: Colors.red,
+                        alignment: Alignment.centerRight,
+                        padding: const EdgeInsets.only(right: 20.0),
+                        child: const Icon(Icons.delete, color: Colors.white),
+                      ),
+                      child: ListTile(
+                        title: Text(
+                          word.word,
+                          style:
+                          const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Text(word.definition),
+                        onTap: () {
+                          _editWord(context, originalIndex);
+                        },
+                      ),
+                    );
                   },
-                ),
-              );
-            },
-          );
-        },
+                );
+              },
+            ),
+          ),
+        ],
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () => _addWord(context),
@@ -196,7 +232,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
-    Hive.close(); // Close all open boxes when the widget is disposed
+    _searchController.dispose();
+    Hive.close();
     super.dispose();
   }
 }
